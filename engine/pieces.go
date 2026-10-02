@@ -55,14 +55,50 @@ func (p Position) ToAlgebraic() string {
 
 // Move represents a chess move
 type Move struct {
-	From       Position   `json:"from"`
-	To         Position   `json:"to"`
-	Piece      *Piece     `json:"piece"`
-	Captured   *Piece     `json:"captured,omitempty"`
+	From        Position  `json:"from"`
+	To          Position  `json:"to"`
+	Piece       *Piece    `json:"piece"`
+	Captured    *Piece    `json:"captured,omitempty"`
 	IsPromotion bool      `json:"isPromotion,omitempty"`
-	PromotedTo PieceType  `json:"promotedTo,omitempty"`
+	PromotedTo  PieceType `json:"promotedTo,omitempty"`
 	IsCastling  bool      `json:"isCastling,omitempty"`
 	IsEnPassant bool      `json:"isEnPassant,omitempty"`
+	SAN         string    `json:"san,omitempty"`
+}
+
+// Equals reports whether two positions refer to the same square
+func (p Position) Equals(o Position) bool {
+	return p.Row == o.Row && p.Col == o.Col
+}
+
+// PositionFromAlgebraic parses a square such as "e4"
+func PositionFromAlgebraic(s string) (Position, bool) {
+	if len(s) != 2 || s[0] < 'a' || s[0] > 'h' || s[1] < '1' || s[1] > '8' {
+		return Position{}, false
+	}
+	return Position{Row: 8 - int(s[1]-'0'), Col: int(s[0] - 'a')}, true
+}
+
+// IsValidPromotion reports whether a pawn may promote to the given type
+func IsValidPromotion(t PieceType) bool {
+	return t == Queen || t == Rook || t == Bishop || t == Knight
+}
+
+// PieceLetter returns the SAN letter for a piece type (empty for pawns)
+func PieceLetter(t PieceType) string {
+	switch t {
+	case King:
+		return "K"
+	case Queen:
+		return "Q"
+	case Rook:
+		return "R"
+	case Bishop:
+		return "B"
+	case Knight:
+		return "N"
+	}
+	return ""
 }
 
 // PieceValue returns the material value of a piece

@@ -26,3 +26,5 @@ Thumbs.db
 # Logs
 *.log
 *.mp4
+# Local run state (start.ps1)
+.run/
