@@ -1,10 +1,17 @@
 /**
- * Chess board representation and manipulation
+ * Board types (as sent by the backend) and DOM rendering.
  */
 
-import { Piece, Position, PieceColor, PieceType, createPiece, getPieceSymbol } from './pieces';
+import { Piece, Position, PieceColor, getPieceSymbol, samePosition } from './pieces';
 
 export type Board = (Piece | null)[][];
+
+export interface CastlingRights {
+    whiteKingside: boolean;
+    whiteQueenside: boolean;
+    blackKingside: boolean;
+    blackQueenside: boolean;
+}
 
 export interface BoardState {
     board: Board;
@@ -15,192 +22,96 @@ export interface BoardState {
     fullMoveNumber: number;
 }
 
-export interface CastlingRights {
-    whiteKingside: boolean;
-    whiteQueenside: boolean;
-    blackKingside: boolean;
-    blackQueenside: boolean;
+export interface MoveTarget extends Position {
+    isCapture: boolean;
+    isPromotion: boolean;
+    isCastling: boolean;
 }
 
-/**
- * Create the initial chess board setup
- */
-export function createInitialBoard(): Board {
-    // TODO: Implement initial board setup
-    const board: Board = Array(8).fill(null).map(() => Array(8).fill(null));
-    
-    // Setup pawns
-    for (let col = 0; col < 8; col++) {
-        board[1][col] = createPiece('pawn', 'black');
-        board[6][col] = createPiece('pawn', 'white');
-    }
-    
-    // Setup back ranks
-    const backRankPieces: PieceType[] = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'];
-    
-    for (let col = 0; col < 8; col++) {
-        board[0][col] = createPiece(backRankPieces[col], 'black');
-        board[7][col] = createPiece(backRankPieces[col], 'white');
-    }
-    
-    return board;
+export interface RenderOptions {
+    flipped: boolean;
+    selected: Position | null;
+    targets: MoveTarget[];
+    lastMove: { from: Position; to: Position } | null;
+    checkedKing: Position | null;
+    interactive: boolean;
 }
 
-/**
- * Create initial board state
- */
-export function createInitialBoardState(): BoardState {
-    // TODO: Implement initial state creation
-    return {
-        board: createInitialBoard(),
-        currentTurn: 'white',
-        castlingRights: {
-            whiteKingside: true,
-            whiteQueenside: true,
-            blackKingside: true,
-            blackQueenside: true
-        },
-        enPassantTarget: null,
-        halfMoveClock: 0,
-        fullMoveNumber: 1
-    };
-}
-
-/**
- * Get piece at a specific position
- */
-export function getPieceAt(board: Board, position: Position): Piece | null {
-    // TODO: Implement piece retrieval
-    if (!isValidPosition(position)) {
-        return null;
-    }
-    return board[position.row][position.col];
-}
-
-/**
- * Set piece at a specific position
- */
-export function setPieceAt(board: Board, position: Position, piece: Piece | null): void {
-    // TODO: Implement piece placement
-    if (isValidPosition(position)) {
-        board[position.row][position.col] = piece;
-    }
-}
-
-/**
- * Check if a position is valid (within board bounds)
- */
-export function isValidPosition(position: Position): boolean {
-    // TODO: Implement position validation
-    return position.row >= 0 && position.row < 8 && position.col >= 0 && position.col < 8;
-}
+const FILES = 'abcdefgh';
 
 /**
  * Convert position to algebraic notation (e.g., {row: 0, col: 0} -> "a8")
  */
 export function positionToAlgebraic(position: Position): string {
-    // TODO: Implement algebraic notation conversion
-    const files = 'abcdefgh';
-    const rank = 8 - position.row;
-    return files[position.col] + rank;
+    return FILES[position.col] + (8 - position.row);
 }
 
 /**
- * Convert algebraic notation to position (e.g., "e4" -> {row: 4, col: 4})
+ * Find the king of the given color on the board
  */
-export function algebraicToPosition(algebraic: string): Position {
-    // TODO: Implement algebraic to position conversion
-    const files = 'abcdefgh';
-    const col = files.indexOf(algebraic[0]);
-    const row = 8 - parseInt(algebraic[1]);
-    return { row, col };
-}
-
-/**
- * Clone a board (deep copy)
- */
-export function cloneBoard(board: Board): Board {
-    // TODO: Implement board cloning
-    return board.map(row => row.map(piece => piece ? { ...piece } : null));
-}
-
-/**
- * Find the king's position for a given color
- */
-export function findKingPosition(board: Board, color: PieceColor): Position | null {
-    // TODO: Implement king position search
+export function findKing(board: Board, color: PieceColor): Position | null {
     for (let row = 0; row < 8; row++) {
         for (let col = 0; col < 8; col++) {
-            const piece = board[row][col];
-            if (piece && piece.type === 'king' && piece.color === color) {
-                return { row, col };
-            }
+            const p = board[row][col];
+            if (p && p.type === 'king' && p.color === color) return { row, col };
         }
     }
     return null;
 }
 
 /**
- * Get all pieces of a specific color
- */
-export function getPiecesByColor(board: Board, color: PieceColor): { piece: Piece; position: Position }[] {
-    // TODO: Implement piece collection by color
-    const pieces: { piece: Piece; position: Position }[] = [];
-    for (let row = 0; row < 8; row++) {
-        for (let col = 0; col < 8; col++) {
-            const piece = board[row][col];
-            if (piece && piece.color === color) {
-                pieces.push({ piece, position: { row, col } });
-            }
-        }
-    }
-    return pieces;
-}
-
-/**
  * Render the board to the DOM
  */
-export function renderBoard(board: Board, containerId: string, flipped: boolean = false): void {
-    // TODO: Implement board rendering
+export function renderBoard(board: Board, containerId: string, opts: RenderOptions): void {
     const container = document.getElementById(containerId);
     if (!container) return;
-    
+
     container.innerHTML = '';
-    
-    for (let row = 0; row < 8; row++) {
-        for (let col = 0; col < 8; col++) {
-            const actualRow = flipped ? 7 - row : row;
-            const actualCol = flipped ? 7 - col : col;
-            
+    container.classList.toggle('locked', !opts.interactive);
+
+    for (let displayRow = 0; displayRow < 8; displayRow++) {
+        for (let displayCol = 0; displayCol < 8; displayCol++) {
+            const row = opts.flipped ? 7 - displayRow : displayRow;
+            const col = opts.flipped ? 7 - displayCol : displayCol;
+            const pos = { row, col };
+
             const square = document.createElement('div');
             square.className = `square ${(row + col) % 2 === 0 ? 'light' : 'dark'}`;
-            square.dataset.row = actualRow.toString();
-            square.dataset.col = actualCol.toString();
-            
-            const piece = board[actualRow][actualCol];
+            square.dataset.row = String(row);
+            square.dataset.col = String(col);
+            square.setAttribute('aria-label', positionToAlgebraic(pos));
+
+            const piece = board[row][col];
             if (piece) {
-                square.textContent = getPieceSymbol(piece);
-                square.classList.add('piece');
+                const span = document.createElement('span');
+                span.className = `piece piece-${piece.color}`;
+                span.textContent = getPieceSymbol(piece);
+                square.appendChild(span);
             }
-            
+
+            if (opts.lastMove && (samePosition(opts.lastMove.from, pos) || samePosition(opts.lastMove.to, pos))) {
+                square.classList.add('last-move');
+            }
+            if (samePosition(opts.selected, pos)) square.classList.add('selected');
+            if (samePosition(opts.checkedKing, pos)) square.classList.add('in-check');
+
+            const target = opts.targets.find(t => samePosition(t, pos));
+            if (target) square.classList.add(target.isCapture ? 'capture-move' : 'valid-move');
+
+            if (displayCol === 0) {
+                const rank = document.createElement('span');
+                rank.className = 'coord rank';
+                rank.textContent = String(8 - row);
+                square.appendChild(rank);
+            }
+            if (displayRow === 7) {
+                const file = document.createElement('span');
+                file.className = 'coord file';
+                file.textContent = FILES[col];
+                square.appendChild(file);
+            }
+
             container.appendChild(square);
         }
     }
-}
-
-/**
- * Parse FEN string to board state
- */
-export function parseFEN(fen: string): BoardState {
-    // TODO: Implement FEN parsing
-    // FEN format: piece placement, active color, castling, en passant, halfmove, fullmove
-    throw new Error('Not implemented');
-}
-
-/**
- * Convert board state to FEN string
- */
-export function toFEN(state: BoardState): string {
-    // TODO: Implement FEN generation
-    throw new Error('Not implemented');
 }
