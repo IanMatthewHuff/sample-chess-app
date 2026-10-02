@@ -1,226 +1,250 @@
-/**
- * Chess App Entry Point
- */
+import { renderBoard, type Board } from './board';
+import type { GameState } from './game';
+import type { LegalMove, PieceType, Position } from './pieces';
+import { renderCapturedPieces } from './captured';
+import { renderMoveHistory } from './history';
+import { highlightSquare } from './highlights';
+import { createGame, getGameState, makeMove, makeAiMove, getValidMoves, undoMove, redoMove } from './api';
 
-import { renderBoard } from './board';
-import { GameState, createNewGame, getValidMoves, makeMove, undoMove, redoMove, getGameStatus } from './game';
-import { Position } from './pieces';
+let game: GameState | null = null;
+let selected: Position | null = null;
+let legal: LegalMove[] = [];
+let flipped = false;
+let busy = false;
+let message = '';
+let selectionVersion = 0;
+let lastRenderedBoard: Board | null = null;
+let lastRenderedFlipped = false;
 
-// Global game state
-let gameState: GameState;
-let boardFlipped = false;
+const same = (a: Position, b: Position) => a.row === b.row && a.col === b.col;
+const terminal = (status: string) => ['checkmate', 'stalemate', 'draw'].includes(status);
 
-/**
- * Initialize the chess application
- */
-function init(): void {
-    gameState = createNewGame();
-    
-    setupEventListeners();
-    render();
-    
-    console.log('Chess app initialized');
-}
-
-/**
- * Setup event listeners for UI controls
- */
-function setupEventListeners(): void {
-    // New game button
-    const newGameBtn = document.getElementById('new-game');
-    newGameBtn?.addEventListener('click', handleNewGame);
-    
-    // Undo button
-    const undoBtn = document.getElementById('undo');
-    undoBtn?.addEventListener('click', handleUndo);
-    
-    // Redo button
-    const redoBtn = document.getElementById('redo');
-    redoBtn?.addEventListener('click', handleRedo);
-    
-    // Flip board button
-    const flipBtn = document.getElementById('flip-board');
-    flipBtn?.addEventListener('click', handleFlipBoard);
-    
-    // Board click handling
-    const board = document.getElementById('board');
-    board?.addEventListener('click', handleBoardClick);
-}
-
-/**
- * Handle board square click
- */
-function handleBoardClick(event: MouseEvent): void {
-    const target = event.target as HTMLElement;
-    const square = target.closest('.square') as HTMLElement;
-    
-    if (!square) return;
-    
-    const row = parseInt(square.dataset.row || '0');
-    const col = parseInt(square.dataset.col || '0');
-    const position: Position = { row, col };
-    
-    if (gameState.selectedSquare) {
-        // Check if clicking on a valid move destination
-        const isValidMove = gameState.validMoves.some(
-            move => move.row === row && move.col === col
-        );
-        
-        if (isValidMove) {
-            gameState = makeMove(gameState, gameState.selectedSquare, position);
-            updateGameStatus();
-        } else {
-            // Select new square or deselect
-            selectSquare(position);
-        }
-    } else {
-        selectSquare(position);
-    }
-    
-    render();
-}
-
-/**
- * Select a square and calculate valid moves
- */
-function selectSquare(position: Position): void {
-    // TODO: Implement square selection
-    const piece = gameState.boardState.board[position.row][position.col];
-    
-    if (piece && piece.color === gameState.boardState.currentTurn) {
-        gameState.selectedSquare = position;
-        gameState.validMoves = getValidMoves(gameState.boardState, position);
-    } else {
-        gameState.selectedSquare = null;
-        gameState.validMoves = [];
-    }
-}
-
-/**
- * Handle new game button click
- */
-function handleNewGame(): void {
-    // TODO: Implement new game handling
-    gameState = createNewGame();
-    render();
-}
-
-/**
- * Handle undo button click
- */
-function handleUndo(): void {
-    // TODO: Implement undo handling
-    gameState = undoMove(gameState);
-    render();
-}
-
-/**
- * Handle redo button click
- */
-function handleRedo(): void {
-    // TODO: Implement redo handling
-    gameState = redoMove(gameState);
-    render();
-}
-
-/**
- * Handle flip board button click
- */
-function handleFlipBoard(): void {
-    // TODO: Implement board flip
-    boardFlipped = !boardFlipped;
-    render();
-}
-
-/**
- * Update game status display
- */
-function updateGameStatus(): void {
-    // TODO: Implement status update
-    gameState.gameStatus = getGameStatus(gameState.boardState);
-    
-    const statusEl = document.getElementById('game-status');
-    if (statusEl) {
-        switch (gameState.gameStatus) {
-            case 'check':
-                statusEl.textContent = 'Check!';
-                break;
-            case 'checkmate':
-                const winner = gameState.boardState.currentTurn === 'white' ? 'Black' : 'White';
-                statusEl.textContent = `Checkmate! ${winner} wins!`;
-                break;
-            case 'stalemate':
-                statusEl.textContent = 'Stalemate! Draw.';
-                break;
-            default:
-                statusEl.textContent = '';
-        }
-    }
-}
-
-/**
- * Render the game UI
- */
 function render(): void {
-    // Render board
-    renderBoard(gameState.boardState.board, 'board', boardFlipped);
-    
-    // Highlight selected square
-    if (gameState.selectedSquare) {
-        highlightSquare(gameState.selectedSquare, 'selected');
+    if (!game) return;
+    if (lastRenderedBoard !== game.state.board || lastRenderedFlipped !== flipped) {
+        renderBoard(game.state.board, 'board', flipped);
+        lastRenderedBoard = game.state.board;
+        lastRenderedFlipped = flipped;
     }
-    
-    // Highlight valid moves
-    for (const move of gameState.validMoves) {
-        const piece = gameState.boardState.board[move.row][move.col];
-        highlightSquare(move, piece ? 'capture-move' : 'valid-move');
+    const board = document.getElementById('board')!;
+    if (board.getAttribute('aria-busy') !== String(busy)) {
+        board.setAttribute('aria-busy', String(busy));
     }
-    
-    // Update turn indicator
-    const turnIndicator = document.getElementById('turn-indicator');
-    if (turnIndicator) {
-        const color = gameState.boardState.currentTurn;
-        turnIndicator.textContent = `${color.charAt(0).toUpperCase() + color.slice(1)} to move`;
+    const lastMove = game.history[game.history.length - 1];
+    const checkedKing = game.status === 'check' || game.status === 'checkmate'
+        ? game.state.currentTurn : null;
+    for (const square of document.querySelectorAll<HTMLElement>('.square')) {
+        const pos = { row: Number(square.dataset.row), col: Number(square.dataset.col) };
+        highlightSquare(square, pos, game.state.board[pos.row][pos.col], selected, legal, lastMove, checkedKing);
+        const disabled = String(terminal(game.status));
+        if (square.getAttribute('aria-disabled') !== disabled) {
+            square.setAttribute('aria-disabled', disabled);
+        }
     }
-    
-    // Update move history
-    renderMoveHistory();
+    const turn = document.getElementById('turn-indicator')!;
+    const turnText = game.state.currentTurn === 'white' ? 'Your turn (White)' : 'Computer thinking (Black)';
+    if (turn.textContent !== turnText) turn.textContent = turnText;
+    const status = document.getElementById('game-status')!;
+    const result = game.status === 'checkmate'
+        ? `${game.state.currentTurn === 'white' ? 'Computer' : 'You'} win by checkmate!`
+        : game.status === 'stalemate' ? 'Stalemate — draw'
+        : game.status === 'draw' ? 'Draw'
+        : game.status === 'check' ? 'Check!' : '';
+    const statusText = message || result;
+    if (status.textContent !== statusText) status.textContent = statusText;
+    const undoButton = document.getElementById('undo') as HTMLButtonElement;
+    const redoButton = document.getElementById('redo') as HTMLButtonElement;
+    const retryButton = document.getElementById('retry-ai') as HTMLButtonElement;
+    if (undoButton.disabled !== (busy || !game.canUndo)) undoButton.disabled = busy || !game.canUndo;
+    if (redoButton.disabled !== (busy || !game.canRedo)) redoButton.disabled = busy || !game.canRedo;
+    const hideRetry = busy || game.state.currentTurn !== 'black' || terminal(game.status);
+    if (retryButton.hidden !== hideRetry) retryButton.hidden = hideRetry;
+    renderMoveHistory(game.history);
+    renderCapturedPieces(game.history);
 }
 
-/**
- * Highlight a square on the board
- */
-function highlightSquare(position: Position, className: string): void {
-    // TODO: Implement square highlighting
-    const squares = document.querySelectorAll('.square');
-    squares.forEach(square => {
-        const el = square as HTMLElement;
-        if (el.dataset.row === position.row.toString() && 
-            el.dataset.col === position.col.toString()) {
-            el.classList.add(className);
-        }
+function choosePromotion(): Promise<PieceType | null> {
+    const dialog = document.getElementById('promotion-dialog') as HTMLDialogElement;
+    return new Promise(resolve => {
+        dialog.addEventListener('close', () => {
+            const choice = dialog.returnValue;
+            resolve(['queen', 'rook', 'bishop', 'knight'].includes(choice)
+                ? choice as PieceType : null);
+        }, { once: true });
+        dialog.returnValue = '';
+        dialog.showModal();
     });
 }
 
-/**
- * Render move history
- */
-function renderMoveHistory(): void {
-    // TODO: Implement move history rendering
-    const historyEl = document.getElementById('move-history');
-    if (!historyEl) return;
-    
-    historyEl.innerHTML = gameState.moveHistory
-        .map((move, index) => {
-            const moveNum = Math.floor(index / 2) + 1;
-            const piece = move.piece.type;
-            return `${index % 2 === 0 ? moveNum + '. ' : ''}${piece}`;
-        })
-        .join(' ');
+function showError(error: unknown): void {
+    message = error instanceof Error ? error.message : String(error);
+    render();
 }
 
-// Initialize app when DOM is ready
-document.addEventListener('DOMContentLoaded', init);
+async function computerTurn(): Promise<void> {
+    if (!game || game.state.currentTurn !== 'black' || terminal(game.status)) return;
+    busy = true;
+    message = '';
+    render();
+    try {
+        game = await makeAiMove(game.gameId);
+    } catch (error) {
+        showError(error);
+    } finally {
+        busy = false;
+        render();
+    }
+}
 
-// Export for potential testing
-export { gameState, init };
+async function selectSquare(pos: Position): Promise<void> {
+    if (!game || game.state.currentTurn !== 'white' || terminal(game.status)) return;
+    const piece = game.state.board[pos.row][pos.col];
+    if (!piece || piece.color !== 'white') {
+        selected = null;
+        legal = [];
+        render();
+        return;
+    }
+    const version = ++selectionVersion;
+    selected = pos;
+    legal = [];
+    render();
+    try {
+        const moves = await getValidMoves(game.gameId, pos);
+        if (version === selectionVersion) {
+            legal = moves;
+            message = '';
+        }
+    } catch (error) {
+        if (version === selectionVersion) showError(error);
+    }
+    render();
+}
+
+async function boardAction(pos: Position): Promise<void> {
+    if (!game || busy || game.state.currentTurn !== 'white' || terminal(game.status)) return;
+    if (selected && legal.some(move => same(move, pos))) {
+        const from = selected;
+        const piece = game.state.board[from.row][from.col];
+        const promotion = piece?.type === 'pawn' && pos.row === 0
+            ? await choosePromotion() : 'queen';
+        if (promotion === null) return;
+        if (!game || busy || !selected || !same(selected, from)) return;
+        busy = true;
+        ++selectionVersion;
+        message = '';
+        render();
+        try {
+            game = await makeMove(game.gameId, from, pos, promotion);
+            selected = null;
+            legal = [];
+            busy = false;
+            render();
+            await computerTurn();
+        } catch (error) {
+            showError(error);
+        } finally {
+            busy = false;
+            render();
+        }
+    } else if (selected && same(pos, selected)) {
+        ++selectionVersion;
+        selected = null;
+        legal = [];
+        render();
+    } else {
+        await selectSquare(pos);
+    }
+}
+
+async function changeGame(action: () => Promise<GameState>): Promise<void> {
+    if (busy) return;
+    busy = true;
+    ++selectionVersion;
+    selected = null;
+    legal = [];
+    message = '';
+    render();
+    try {
+        game = await action();
+        sessionStorage.setItem('chessGameId', game.gameId);
+        if (game.state.currentTurn === 'black') {
+            busy = false;
+            render();
+            await computerTurn();
+        }
+    } catch (error) {
+        showError(error);
+    } finally {
+        busy = false;
+        render();
+    }
+}
+
+function positionFrom(target: EventTarget | null): Position | null {
+    const square = (target as HTMLElement | null)?.closest?.('.square') as HTMLElement | null;
+    if (!square) return null;
+    return { row: Number(square.dataset.row), col: Number(square.dataset.col) };
+}
+
+async function init(): Promise<void> {
+    document.getElementById('board')!.addEventListener('click', event => {
+        const pos = positionFrom(event.target);
+        if (pos) void boardAction(pos);
+    });
+    document.getElementById('board')!.addEventListener('dragstart', event => {
+        const pos = positionFrom(event.target);
+        if (pos && game?.state.board[pos.row][pos.col]?.color === 'white') {
+            event.dataTransfer?.setData('text/plain', JSON.stringify(pos));
+            void selectSquare(pos);
+        } else event.preventDefault();
+    });
+    document.getElementById('board')!.addEventListener('dragover', event => event.preventDefault());
+    document.getElementById('board')!.addEventListener('drop', event => {
+        event.preventDefault();
+        const pos = positionFrom(event.target);
+        const source = event.dataTransfer?.getData('text/plain');
+        if (pos && source && game && !busy) {
+            const from: Position = JSON.parse(source) as Position;
+            void (async () => {
+                await selectSquare(from);
+                await boardAction(pos);
+            })();
+        }
+    });
+    document.getElementById('new-game')!.addEventListener('click', () => void changeGame(createGame));
+    document.getElementById('undo')!.addEventListener('click', () => {
+        if (game) void changeGame(() => undoMove(game!.gameId));
+    });
+    document.getElementById('redo')!.addEventListener('click', () => {
+        if (game) void changeGame(() => redoMove(game!.gameId));
+    });
+    document.getElementById('retry-ai')!.addEventListener('click', () => void computerTurn());
+    document.querySelectorAll<HTMLButtonElement>('#promotion-dialog .promotion-options button')
+        .forEach(button => button.addEventListener('click', () => {
+            (document.getElementById('promotion-dialog') as HTMLDialogElement).close(button.value);
+        }));
+    document.getElementById('cancel-promotion')!.addEventListener('click', () => {
+        (document.getElementById('promotion-dialog') as HTMLDialogElement).close();
+    });
+    document.getElementById('flip-board')!.addEventListener('click', () => {
+        flipped = !flipped;
+        render();
+    });
+    try {
+        const saved = sessionStorage.getItem('chessGameId');
+        if (saved) {
+            try { game = await getGameState(saved); }
+            catch { sessionStorage.removeItem('chessGameId'); }
+        }
+        if (!game) game = await createGame();
+        sessionStorage.setItem('chessGameId', game.gameId);
+        render();
+        await computerTurn();
+    } catch (error) {
+        showError(error);
+        document.getElementById('game-status')!.textContent = message;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => void init());
