@@ -14,15 +14,18 @@
         
         <main>
             <div id="game-container">
-                <div id="board"></div>
+                <div id="board" aria-label="Chess board"></div>
                 
                 <aside id="game-info">
-                    <div id="turn-indicator">White to move</div>
-                    <div id="game-status"></div>
+                    <div id="turn-indicator">Loading game…</div>
+                    <div id="game-status" role="status" aria-live="polite"></div>
                     <div id="captured-pieces">
-                        <div id="captured-white"></div>
-                        <div id="captured-black"></div>
+                        <p>Your captures <small>(Black pieces)</small></p>
+                        <div id="captured-by-white" aria-label="Black pieces captured by you">None</div>
+                        <p>Computer captures <small>(White pieces)</small></p>
+                        <div id="captured-by-black" aria-label="White pieces captured by computer">None</div>
                     </div>
+                    <button id="retry-ai" hidden>Retry computer move</button>
                 </aside>
             </div>
             
@@ -33,8 +36,22 @@
                 <button id="flip-board">Flip Board</button>
             </div>
             
-            <div id="move-history"></div>
+            <section id="move-history" aria-labelledby="move-history-title">
+                <h2 id="move-history-title">Move history</h2>
+                <ol id="move-list"></ol>
+            </section>
         </main>
+        <dialog id="promotion-dialog" aria-labelledby="promotion-title">
+            <h2 id="promotion-title">Promote your pawn</h2>
+            <p>Choose a piece:</p>
+            <div class="promotion-options">
+                <button type="button" value="queen">Queen ♕</button>
+                <button type="button" value="rook">Rook ♖</button>
+                <button type="button" value="bishop">Bishop ♗</button>
+                <button type="button" value="knight">Knight ♘</button>
+            </div>
+            <button type="button" id="cancel-promotion">Cancel</button>
+        </dialog>
     </div>
     
     <script type="module" src="./src/index.ts"></script>
