@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 )
 
 // ValidationRequest represents a move validation request
 type ValidationRequest struct {
-	Board BoardState `json:"board"`
-	From  Position   `json:"from"`
-	To    Position   `json:"to"`
+	Board     BoardState `json:"board"`
+	From      Position   `json:"from"`
+	To        Position   `json:"to"`
+	Promotion PieceType  `json:"promotion"`
 }
 
 // ValidationResponse represents the response to a validation request
@@ -28,7 +30,8 @@ type ValidMovesRequest struct {
 
 // ValidMovesResponse represents the response with valid moves
 type ValidMovesResponse struct {
-	Moves []Position `json:"moves"`
+	Moves    []Position `json:"moves"`
+	Captures []Position `json:"captures"`
 }
 
 // StatusRequest represents a game status request
@@ -38,8 +41,9 @@ type StatusRequest struct {
 
 // StatusResponse represents the game status response
 type StatusResponse struct {
-	Status string `json:"status"`
-	InCheck bool   `json:"inCheck"`
+	Status        string `json:"status"`
+	InCheck       bool   `json:"inCheck"`
+	RepetitionKey string `json:"repetitionKey"`
 }
 
 // handleHealth handles health check requests
@@ -93,10 +97,13 @@ func handleValidMoves(w http.ResponseWriter, r *http.Request) {
 	}
 
 	moves := GetValidMoves(&req.Board, req.Position)
-
-	response := ValidMovesResponse{
-		Moves: moves,
+	captures := make([]Position, 0)
+	for _, move := range moves {
+		if IsCaptureMove(&req.Board, req.Position, move) {
+			captures = append(captures, move)
+		}
 	}
+	response := ValidMovesResponse{Moves: moves, Captures: captures}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
@@ -118,19 +125,34 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	status := GetGameStatus(&req.Board)
 	inCheck := IsInCheck(&req.Board, req.Board.CurrentTurn)
+	key, err := RepetitionKey(&req.Board)
+	if err != nil {
+		http.Error(w, "Could not encode position", http.StatusInternalServerError)
+		return
+	}
 
 	response := StatusResponse{
-		Status:  string(status),
-		InCheck: inCheck,
+		Status: string(status), InCheck: inCheck, RepetitionKey: key,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
 
-// handleMakeMove handles move execution requests
+type MoveWithNotationResponse struct {
+	State *BoardState `json:"state"`
+	SAN   string      `json:"san"`
+}
+
 func handleMakeMove(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement make move handler
+	handleMove(w, r, false)
+}
+
+func handleMoveWithNotation(w http.ResponseWriter, r *http.Request) {
+	handleMove(w, r, true)
+}
+
+func handleMove(w http.ResponseWriter, r *http.Request, withNotation bool) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -147,10 +169,43 @@ func handleMakeMove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newState := MakeMove(&req.Board, req.From, req.To)
+	promotion := req.Promotion
+	if promotion == "" {
+		promotion = Queen
+	}
+	if promotion != Queen && promotion != Rook && promotion != Bishop && promotion != Knight {
+		http.Error(w, "Invalid promotion", http.StatusBadRequest)
+		return
+	}
+	newState := MakeMove(&req.Board, req.From, req.To, promotion)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(newState)
+	if withNotation {
+		json.NewEncoder(w).Encode(MoveWithNotationResponse{
+			State: newState, SAN: MoveSAN(&req.Board, req.From, req.To, promotion),
+		})
+	} else {
+		json.NewEncoder(w).Encode(newState)
+	}
+}
+
+func handleBestMove(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req StatusRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	move := BestMove(&req.Board)
+	if move == nil {
+		http.Error(w, "No legal moves", http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(move)
 }
 
 // corsMiddleware adds CORS headers
@@ -170,8 +225,11 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func main() {
-	fmt.Println("Starting Chess Engine...")
-	fmt.Println("Engine running at http://localhost:8080")
+	port := os.Getenv("ENGINE_PORT")
+	if port == "" {
+		port = "8080"
+	}
+	fmt.Printf("Engine running at http://127.0.0.1:%s\n", port)
 
 	// Register routes
 	http.HandleFunc("/health", corsMiddleware(handleHealth))
@@ -179,7 +237,9 @@ func main() {
 	http.HandleFunc("/moves", corsMiddleware(handleValidMoves))
 	http.HandleFunc("/status", corsMiddleware(handleStatus))
 	http.HandleFunc("/move", corsMiddleware(handleMakeMove))
+	http.HandleFunc("/move-san", corsMiddleware(handleMoveWithNotation))
+	http.HandleFunc("/best-move", corsMiddleware(handleBestMove))
 
 	// Start server
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Fatal(http.ListenAndServe("127.0.0.1:"+port, nil))
 }
