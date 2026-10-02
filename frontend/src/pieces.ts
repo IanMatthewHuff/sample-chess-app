@@ -1,10 +1,13 @@
 /**
- * Chess piece types and related utilities
+ * Chess piece types and display helpers. No rules live here — the Go engine
+ * is the single source of truth for legality.
  */
 
 export type PieceColor = 'white' | 'black';
 
 export type PieceType = 'king' | 'queen' | 'rook' | 'bishop' | 'knight' | 'pawn';
+
+export type PromotionPiece = 'queen' | 'rook' | 'bishop' | 'knight';
 
 export interface Piece {
     type: PieceType;
@@ -26,6 +29,7 @@ export interface Move {
     promotedTo?: PieceType;
     isCastling?: boolean;
     isEnPassant?: boolean;
+    san?: string;
 }
 
 // Unicode chess piece symbols
@@ -51,68 +55,23 @@ const PIECE_SYMBOLS: Record<PieceColor, Record<PieceType, string>> = {
 /**
  * Get the Unicode symbol for a piece
  */
-export function getPieceSymbol(piece: Piece): string {
-    // TODO: Implement piece symbol lookup
+export function getPieceSymbol(piece: Pick<Piece, 'type' | 'color'>): string {
     return PIECE_SYMBOLS[piece.color][piece.type];
 }
 
-/**
- * Create a new piece
- */
-export function createPiece(type: PieceType, color: PieceColor): Piece {
-    // TODO: Implement piece creation
-    return {
-        type,
-        color,
-        hasMoved: false
-    };
+// Used only to sort captured pieces for display.
+const DISPLAY_ORDER: Record<PieceType, number> = {
+    queen: 0, rook: 1, bishop: 2, knight: 3, pawn: 4, king: 5
+};
+
+export function sortForDisplay(types: PieceType[]): PieceType[] {
+    return [...types].sort((a, b) => DISPLAY_ORDER[a] - DISPLAY_ORDER[b]);
 }
 
-/**
- * Get the point value of a piece (for material calculation)
- */
-export function getPieceValue(piece: Piece): number {
-    // TODO: Implement piece valuation
-    // Standard values: pawn=1, knight=3, bishop=3, rook=5, queen=9, king=0
-    const values: Record<PieceType, number> = {
-        pawn: 1,
-        knight: 3,
-        bishop: 3,
-        rook: 5,
-        queen: 9,
-        king: 0
-    };
-    return values[piece.type];
+export function samePosition(a: Position | null | undefined, b: Position | null | undefined): boolean {
+    return !!a && !!b && a.row === b.row && a.col === b.col;
 }
 
-/**
- * Check if two pieces are the same color
- */
-export function isSameColor(piece1: Piece, piece2: Piece): boolean {
-    // TODO: Implement color comparison
-    return piece1.color === piece2.color;
-}
-
-/**
- * Check if a piece is a sliding piece (queen, rook, bishop)
- */
-export function isSlidingPiece(piece: Piece): boolean {
-    // TODO: Implement sliding piece check
-    return ['queen', 'rook', 'bishop'].includes(piece.type);
-}
-
-/**
- * Get algebraic notation for a piece (K, Q, R, B, N, or empty for pawn)
- */
-export function getPieceNotation(piece: Piece): string {
-    // TODO: Implement piece notation
-    const notation: Record<PieceType, string> = {
-        king: 'K',
-        queen: 'Q',
-        rook: 'R',
-        bishop: 'B',
-        knight: 'N',
-        pawn: ''
-    };
-    return notation[piece.type];
+export function capitalize(s: string): string {
+    return s.charAt(0).toUpperCase() + s.slice(1);
 }
