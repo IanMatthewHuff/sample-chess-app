@@ -2,152 +2,79 @@
  * API client for communicating with the Python backend
  */
 
-import { GameState } from './game';
-import { Move, Position } from './pieces';
-import { BoardState } from './board';
+import { MoveTarget } from './board';
+import { Difficulty, GameMode, GameView } from './game';
+import { PieceColor, Position, PromotionPiece } from './pieces';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+// Defaults to same-origin `/api`, which the Vite dev server proxies to the backend.
+const API_BASE_URL: string = import.meta.env.VITE_API_URL || '/api';
 
-export interface ApiResponse<T> {
-    success: boolean;
-    data?: T;
-    error?: string;
+export class ApiError extends Error {
+    constructor(message: string, public status: number) {
+        super(message);
+    }
 }
 
-export interface GameResponse {
-    gameId: string;
-    state: BoardState;
-    status: string;
-}
-
-export interface MoveResponse {
-    valid: boolean;
-    state: BoardState;
-    status: string;
-}
-
-export interface ValidationResponse {
-    valid: boolean;
-    reason?: string;
-}
-
-/**
- * Create a new game on the server
- */
-export async function createGame(): Promise<ApiResponse<GameResponse>> {
-    // TODO: Implement API call to create new game
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+    let response: Response;
     try {
-        const response = await fetch(`${API_BASE_URL}/games`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            }
+        response = await fetch(`${API_BASE_URL}${path}`, {
+            ...init,
+            headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) }
         });
-        
-        const data = await response.json();
-        return { success: true, data };
-    } catch (error) {
-        return { success: false, error: (error as Error).message };
-    }
-}
-
-/**
- * Get current game state
- */
-export async function getGameState(gameId: string): Promise<ApiResponse<GameResponse>> {
-    // TODO: Implement API call to get game state
-    try {
-        const response = await fetch(`${API_BASE_URL}/games/${gameId}`);
-        const data = await response.json();
-        return { success: true, data };
-    } catch (error) {
-        return { success: false, error: (error as Error).message };
-    }
-}
-
-/**
- * Make a move
- */
-export async function makeMove(gameId: string, from: Position, to: Position): Promise<ApiResponse<MoveResponse>> {
-    // TODO: Implement API call to make move
-    try {
-        const response = await fetch(`${API_BASE_URL}/games/${gameId}/move`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ from, to })
-        });
-        
-        const data = await response.json();
-        return { success: true, data };
-    } catch (error) {
-        return { success: false, error: (error as Error).message };
-    }
-}
-
-/**
- * Validate a move with the Go engine
- */
-export async function validateMove(gameId: string, from: Position, to: Position): Promise<ApiResponse<ValidationResponse>> {
-    // TODO: Implement API call to validate move
-    try {
-        const response = await fetch(`${API_BASE_URL}/games/${gameId}/validate`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ from, to })
-        });
-        
-        const data = await response.json();
-        return { success: true, data };
-    } catch (error) {
-        return { success: false, error: (error as Error).message };
-    }
-}
-
-/**
- * Get valid moves for a position
- */
-export async function getValidMoves(gameId: string, position: Position): Promise<ApiResponse<Position[]>> {
-    // TODO: Implement API call to get valid moves
-    try {
-        const response = await fetch(
-            `${API_BASE_URL}/games/${gameId}/moves?row=${position.row}&col=${position.col}`
-        );
-        const data = await response.json();
-        return { success: true, data };
-    } catch (error) {
-        return { success: false, error: (error as Error).message };
-    }
-}
-
-/**
- * Undo last move
- */
-export async function undoMove(gameId: string): Promise<ApiResponse<GameResponse>> {
-    // TODO: Implement API call to undo move
-    try {
-        const response = await fetch(`${API_BASE_URL}/games/${gameId}/undo`, {
-            method: 'POST'
-        });
-        const data = await response.json();
-        return { success: true, data };
-    } catch (error) {
-        return { success: false, error: (error as Error).message };
-    }
-}
-
-/**
- * Health check for API
- */
-export async function healthCheck(): Promise<boolean> {
-    // TODO: Implement health check
-    try {
-        const response = await fetch(`${API_BASE_URL}/health`);
-        return response.ok;
     } catch {
-        return false;
+        throw new ApiError('Cannot reach the game server. Is the backend running?', 0);
+    }
+
+    let data: unknown = null;
+    try {
+        data = await response.json();
+    } catch {
+        // non-JSON body
+    }
+    if (!response.ok) {
+        const message = (data as { error?: string } | null)?.error ?? `Request failed (${response.status})`;
+        throw new ApiError(message, response.status);
+    }
+    return data as T;
+}
+
+const post = <T>(path: string, body?: unknown) =>
+    request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
+
+export interface NewGameOptions {
+    mode: GameMode;
+    humanColor: PieceColor;
+    difficulty: Difficulty;
+}
+
+export const createGame = (opts: NewGameOptions) => post<GameView>('/games', opts);
+
+export const getGame = (gameId: string) => request<GameView>(`/games/${gameId}`);
+
+export async function getValidMoves(gameId: string, position: Position): Promise<MoveTarget[]> {
+    const data = await request<{ moves: MoveTarget[] }>(
+        `/games/${gameId}/moves?row=${position.row}&col=${position.col}`
+    );
+    return data.moves;
+}
+
+export const makeMove = (gameId: string, from: Position, to: Position, promotion?: PromotionPiece) =>
+    post<GameView>(`/games/${gameId}/move`, { from, to, promotion });
+
+export const requestAIMove = (gameId: string) => post<GameView>(`/games/${gameId}/ai-move`);
+
+export const undoMove = (gameId: string) => post<GameView>(`/games/${gameId}/undo`);
+
+export const redoMove = (gameId: string) => post<GameView>(`/games/${gameId}/redo`);
+
+export const resignGame = (gameId: string) => post<GameView>(`/games/${gameId}/resign`);
+
+export async function healthCheck(): Promise<{ ok: boolean; engine: string }> {
+    try {
+        const data = await request<{ engine: string }>('/health');
+        return { ok: true, engine: data.engine };
+    } catch (e) {
+        return { ok: false, engine: e instanceof ApiError && e.status === 503 ? 'unreachable' : 'unknown' };
     }
 }

@@ -1,187 +1,107 @@
 """
-Flask REST API for chess game
+Flask REST API for chess game management.
+Chess rules are delegated to the Go engine (see engine_client.py).
 """
 
-import uuid
-from flask import Flask, request, jsonify
+import os
+
+from flask import Flask, jsonify, request
 from flask_cors import CORS
-from typing import Dict
 
-from pieces import Position
-from game_logic import GameState, create_new_game, make_move, undo_move, get_valid_moves, is_valid_move
-
-
-app = Flask(__name__)
-CORS(app)
-
-# In-memory game storage
-games: Dict[str, GameState] = {}
+from engine_client import EngineClient, EngineError, EngineUnavailable
+from game_manager import GameError, GameManager
 
 
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    """Health check endpoint"""
-    return jsonify({"status": "healthy", "service": "chess-backend"})
+def create_app(engine: EngineClient = None) -> Flask:
+    app = Flask(__name__)
+    CORS(app)
+    manager = GameManager(engine or EngineClient())
+    app.config["GAME_MANAGER"] = manager
 
+    @app.errorhandler(GameError)
+    def handle_game_error(err: GameError):
+        return jsonify({"error": str(err)}), err.status_code
 
-@app.route('/api/games', methods=['POST'])
-def create_game():
-    """Create a new game"""
-    # TODO: Implement game creation endpoint
-    game_id = str(uuid.uuid4())
-    games[game_id] = create_new_game()
-    
-    return jsonify({
-        "gameId": game_id,
-        "state": games[game_id].board_state.to_dict(),
-        "status": games[game_id].status.value
-    }), 201
+    @app.errorhandler(EngineError)
+    def handle_engine_error(err: EngineError):
+        # 4xx from the engine means the request was rejected (e.g. illegal move).
+        status = 400 if err.status_code < 500 else 502
+        return jsonify({"error": str(err)}), status
 
+    @app.errorhandler(EngineUnavailable)
+    def handle_engine_unavailable(err: EngineUnavailable):
+        return jsonify({"error": str(err)}), 503
 
-@app.route('/api/games/<game_id>', methods=['GET'])
-def get_game(game_id: str):
-    """Get current game state"""
-    # TODO: Implement game retrieval endpoint
-    if game_id not in games:
-        return jsonify({"error": "Game not found"}), 404
-    
-    game = games[game_id]
-    return jsonify({
-        "gameId": game_id,
-        "state": game.board_state.to_dict(),
-        "status": game.status.value,
-        "moveCount": len(game.move_history)
-    })
+    def body() -> dict:
+        data = request.get_json(silent=True)
+        return data if isinstance(data, dict) else {}
 
-
-@app.route('/api/games/<game_id>/move', methods=['POST'])
-def make_game_move(game_id: str):
-    """Make a move in the game"""
-    # TODO: Implement move endpoint
-    if game_id not in games:
-        return jsonify({"error": "Game not found"}), 404
-    
-    data = request.get_json()
-    from_pos = Position.from_dict(data['from'])
-    to_pos = Position.from_dict(data['to'])
-    
-    game = games[game_id]
-    
-    # Validate move
-    if not is_valid_move(game.board_state, from_pos, to_pos):
+    @app.route("/api/health", methods=["GET"])
+    def health_check():
+        engine_ok = manager.engine.health()
         return jsonify({
-            "valid": False,
-            "error": "Invalid move"
-        }), 400
-    
-    # Make the move
-    games[game_id] = make_move(game, from_pos, to_pos)
-    
-    return jsonify({
-        "valid": True,
-        "state": games[game_id].board_state.to_dict(),
-        "status": games[game_id].status.value
-    })
+            "status": "healthy" if engine_ok else "degraded",
+            "service": "chess-backend",
+            "engine": "healthy" if engine_ok else "unreachable",
+        }), 200 if engine_ok else 503
 
-
-@app.route('/api/games/<game_id>/moves', methods=['GET'])
-def get_moves(game_id: str):
-    """Get valid moves for a position"""
-    # TODO: Implement valid moves endpoint
-    if game_id not in games:
-        return jsonify({"error": "Game not found"}), 404
-    
-    row = request.args.get('row', type=int)
-    col = request.args.get('col', type=int)
-    
-    if row is None or col is None:
-        return jsonify({"error": "Position required"}), 400
-    
-    position = Position(row, col)
-    game = games[game_id]
-    
-    valid_moves = get_valid_moves(game.board_state, position)
-    
-    return jsonify([m.to_dict() for m in valid_moves])
-
-
-@app.route('/api/games/<game_id>/validate', methods=['POST'])
-def validate_move(game_id: str):
-    """Validate a move (calls Go engine)"""
-    # TODO: Implement validation endpoint (call Go engine)
-    if game_id not in games:
-        return jsonify({"error": "Game not found"}), 404
-    
-    data = request.get_json()
-    from_pos = Position.from_dict(data['from'])
-    to_pos = Position.from_dict(data['to'])
-    
-    game = games[game_id]
-    valid = is_valid_move(game.board_state, from_pos, to_pos)
-    
-    # TODO: Call Go engine for validation
-    # engine_result = call_go_engine(game.board_state, from_pos, to_pos)
-    
-    return jsonify({
-        "valid": valid,
-        "reason": None if valid else "Invalid move"
-    })
-
-
-@app.route('/api/games/<game_id>/undo', methods=['POST'])
-def undo_game_move(game_id: str):
-    """Undo the last move"""
-    # TODO: Implement undo endpoint
-    if game_id not in games:
-        return jsonify({"error": "Game not found"}), 404
-    
-    games[game_id] = undo_move(games[game_id])
-    
-    return jsonify({
-        "gameId": game_id,
-        "state": games[game_id].board_state.to_dict(),
-        "status": games[game_id].status.value
-    })
-
-
-@app.route('/api/games/<game_id>/history', methods=['GET'])
-def get_move_history(game_id: str):
-    """Get move history for a game"""
-    # TODO: Implement history endpoint
-    if game_id not in games:
-        return jsonify({"error": "Game not found"}), 404
-    
-    game = games[game_id]
-    history = [move.to_dict() for move in game.move_history]
-    
-    return jsonify({
-        "gameId": game_id,
-        "moves": history,
-        "count": len(history)
-    })
-
-
-def call_go_engine(board_state, from_pos: Position, to_pos: Position) -> dict:
-    """Call the Go validation engine"""
-    # TODO: Implement Go engine integration
-    import requests
-    
-    try:
-        response = requests.post(
-            "http://localhost:8080/validate",
-            json={
-                "board": board_state.to_dict(),
-                "from": from_pos.to_dict(),
-                "to": to_pos.to_dict()
-            },
-            timeout=5
+    @app.route("/api/games", methods=["POST"])
+    def create_game():
+        data = body()
+        game = manager.create(
+            mode=data.get("mode", "ai"),
+            human_color=data.get("humanColor", "white"),
+            difficulty=data.get("difficulty", "medium"),
+            fen=data.get("fen"),
         )
-        return response.json()
-    except requests.RequestException as e:
-        return {"valid": False, "error": str(e)}
+        return jsonify(game.to_view()), 201
+
+    @app.route("/api/games/<game_id>", methods=["GET"])
+    def get_game(game_id: str):
+        return jsonify(manager.get(game_id).to_view())
+
+    @app.route("/api/games/<game_id>/moves", methods=["GET"])
+    def get_moves(game_id: str):
+        game = manager.get(game_id)
+        position = {"row": request.args.get("row", type=int), "col": request.args.get("col", type=int)}
+        return jsonify({"moves": manager.valid_moves(game, position)})
+
+    @app.route("/api/games/<game_id>/move", methods=["POST"])
+    def make_game_move(game_id: str):
+        game = manager.get(game_id)
+        data = body()
+        manager.human_move(game, data.get("from"), data.get("to"), data.get("promotion"))
+        return jsonify(game.to_view())
+
+    @app.route("/api/games/<game_id>/ai-move", methods=["POST"])
+    def make_ai_move(game_id: str):
+        game = manager.get(game_id)
+        manager.ai_move(game)
+        return jsonify(game.to_view())
+
+    @app.route("/api/games/<game_id>/undo", methods=["POST"])
+    def undo_game_move(game_id: str):
+        return jsonify(manager.undo(manager.get(game_id)).to_view())
+
+    @app.route("/api/games/<game_id>/redo", methods=["POST"])
+    def redo_game_move(game_id: str):
+        return jsonify(manager.redo(manager.get(game_id)).to_view())
+
+    @app.route("/api/games/<game_id>/resign", methods=["POST"])
+    def resign_game(game_id: str):
+        return jsonify(manager.resign(manager.get(game_id)).to_view())
+
+    @app.route("/api/games/<game_id>/history", methods=["GET"])
+    def get_move_history(game_id: str):
+        game = manager.get(game_id)
+        moves = game.played_moves()
+        return jsonify({"gameId": game_id, "moves": moves, "count": len(moves)})
+
+    return app
 
 
-if __name__ == '__main__':
-    print("Starting Chess Backend API...")
-    print("API running at http://localhost:5000")
-    app.run(host='0.0.0.0', port=5000, debug=True)
+if __name__ == "__main__":
+    host = os.environ.get("BACKEND_HOST", "127.0.0.1")
+    port = int(os.environ.get("BACKEND_PORT", "18472"))
+    print(f"Chess backend API listening on http://{host}:{port} (engine: {EngineClient().base_url})")
+    create_app().run(host=host, port=port, debug=False, threaded=True)
