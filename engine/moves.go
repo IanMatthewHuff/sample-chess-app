@@ -1,357 +1,420 @@
 package main
 
-// GetValidMoves returns all valid moves for a piece at the given position
-func GetValidMoves(state *BoardState, pos Position) []Position {
-	// TODO: Implement valid move calculation
+import (
+	"errors"
+)
+
+// ErrInvalidMove is returned when a requested move is not legal
+var ErrInvalidMove = errors.New("invalid move")
+
+var (
+	knightOffsets    = [][2]int{{-2, -1}, {-2, 1}, {-1, -2}, {-1, 2}, {1, -2}, {1, 2}, {2, -1}, {2, 1}}
+	kingOffsets      = [][2]int{{-1, -1}, {-1, 0}, {-1, 1}, {0, -1}, {0, 1}, {1, -1}, {1, 0}, {1, 1}}
+	bishopDirections = [][2]int{{-1, -1}, {-1, 1}, {1, -1}, {1, 1}}
+	rookDirections   = [][2]int{{-1, 0}, {1, 0}, {0, -1}, {0, 1}}
+	queenDirections  = kingOffsets
+	promotionPieces  = []PieceType{Queen, Rook, Bishop, Knight}
+)
+
+// pawnDirection returns the row delta a pawn of the given color moves in
+func pawnDirection(c PieceColor) int {
+	if c == White {
+		return -1
+	}
+	return 1
+}
+
+// homeRow returns the back rank row for a color
+func homeRow(c PieceColor) int {
+	if c == White {
+		return 7
+	}
+	return 0
+}
+
+// GeneratePseudoLegalMoves returns moves for the piece at pos, ignoring whether
+// they leave the mover's king in check.
+func GeneratePseudoLegalMoves(state *BoardState, pos Position) []Move {
 	piece := state.Board.GetPieceAt(pos)
-	if piece == nil || piece.Color != state.CurrentTurn {
+	if piece == nil {
 		return nil
 	}
 
-	var moves []Position
+	var moves []Move
+	add := func(to Position) {
+		moves = append(moves, Move{From: pos, To: to, Piece: piece, Captured: state.Board.GetPieceAt(to)})
+	}
 
 	switch piece.Type {
 	case Pawn:
-		moves = GetPawnMoves(state, pos, piece)
+		moves = pawnMoves(state, pos, piece)
 	case Knight:
-		moves = GetKnightMoves(state, pos, piece)
+		for _, to := range stepTargets(&state.Board, pos, piece.Color, knightOffsets) {
+			add(to)
+		}
 	case Bishop:
-		moves = GetBishopMoves(state, pos, piece)
+		for _, to := range slideTargets(&state.Board, pos, piece.Color, bishopDirections) {
+			add(to)
+		}
 	case Rook:
-		moves = GetRookMoves(state, pos, piece)
+		for _, to := range slideTargets(&state.Board, pos, piece.Color, rookDirections) {
+			add(to)
+		}
 	case Queen:
-		moves = GetQueenMoves(state, pos, piece)
+		for _, to := range slideTargets(&state.Board, pos, piece.Color, queenDirections) {
+			add(to)
+		}
 	case King:
-		moves = GetKingMoves(state, pos, piece)
-	}
-
-	// Filter out moves that would leave king in check
-	var validMoves []Position
-	for _, move := range moves {
-		if !WouldBeInCheck(state, pos, move) {
-			validMoves = append(validMoves, move)
+		for _, to := range stepTargets(&state.Board, pos, piece.Color, kingOffsets) {
+			add(to)
 		}
+		moves = append(moves, castlingMoves(state, pos, piece)...)
 	}
-
-	return validMoves
-}
-
-// GetPawnMoves returns all possible pawn moves
-func GetPawnMoves(state *BoardState, pos Position, piece *Piece) []Position {
-	// TODO: Implement pawn move logic
-	var moves []Position
-	direction := -1
-	startRow := 6
-	if piece.Color == Black {
-		direction = 1
-		startRow = 1
-	}
-
-	// Single move forward
-	oneForward := Position{Row: pos.Row + direction, Col: pos.Col}
-	if oneForward.IsValid() && state.Board.GetPieceAt(oneForward) == nil {
-		moves = append(moves, oneForward)
-
-		// Double move from starting position
-		if pos.Row == startRow {
-			twoForward := Position{Row: pos.Row + 2*direction, Col: pos.Col}
-			if state.Board.GetPieceAt(twoForward) == nil {
-				moves = append(moves, twoForward)
-			}
-		}
-	}
-
-	// Captures
-	for _, colOffset := range []int{-1, 1} {
-		capturePos := Position{Row: pos.Row + direction, Col: pos.Col + colOffset}
-		if capturePos.IsValid() {
-			target := state.Board.GetPieceAt(capturePos)
-			if target != nil && target.Color != piece.Color {
-				moves = append(moves, capturePos)
-			}
-
-			// En passant
-			if state.EnPassantTarget != nil &&
-				capturePos.Row == state.EnPassantTarget.Row &&
-				capturePos.Col == state.EnPassantTarget.Col {
-				moves = append(moves, capturePos)
-			}
-		}
-	}
-
 	return moves
 }
 
-// GetKnightMoves returns all possible knight moves
-func GetKnightMoves(state *BoardState, pos Position, piece *Piece) []Position {
-	// TODO: Implement knight move logic
-	var moves []Position
-	offsets := [][2]int{
-		{-2, -1}, {-2, 1}, {-1, -2}, {-1, 2},
-		{1, -2}, {1, 2}, {2, -1}, {2, 1},
+func pawnMoves(state *BoardState, pos Position, piece *Piece) []Move {
+	var moves []Move
+	dir := pawnDirection(piece.Color)
+	startRow := homeRow(piece.Color) + dir
+	lastRow := homeRow(piece.Color.Opposite())
+
+	addPawnMove := func(to Position, captured *Piece, enPassant bool) {
+		if to.Row == lastRow {
+			for _, pt := range promotionPieces {
+				moves = append(moves, Move{From: pos, To: to, Piece: piece, Captured: captured, IsPromotion: true, PromotedTo: pt})
+			}
+			return
+		}
+		moves = append(moves, Move{From: pos, To: to, Piece: piece, Captured: captured, IsEnPassant: enPassant})
 	}
 
-	for _, offset := range offsets {
-		newPos := Position{Row: pos.Row + offset[0], Col: pos.Col + offset[1]}
-		if newPos.IsValid() {
-			target := state.Board.GetPieceAt(newPos)
-			if target == nil || target.Color != piece.Color {
-				moves = append(moves, newPos)
-			}
+	one := Position{Row: pos.Row + dir, Col: pos.Col}
+	if one.IsValid() && state.Board.GetPieceAt(one) == nil {
+		addPawnMove(one, nil, false)
+		two := Position{Row: pos.Row + 2*dir, Col: pos.Col}
+		if pos.Row == startRow && state.Board.GetPieceAt(two) == nil {
+			addPawnMove(two, nil, false)
 		}
 	}
 
-	return moves
-}
-
-// GetBishopMoves returns all possible bishop moves
-func GetBishopMoves(state *BoardState, pos Position, piece *Piece) []Position {
-	// TODO: Implement bishop move logic
-	directions := [][2]int{{-1, -1}, {-1, 1}, {1, -1}, {1, 1}}
-	return GetSlidingMoves(state, pos, piece, directions)
-}
-
-// GetRookMoves returns all possible rook moves
-func GetRookMoves(state *BoardState, pos Position, piece *Piece) []Position {
-	// TODO: Implement rook move logic
-	directions := [][2]int{{-1, 0}, {1, 0}, {0, -1}, {0, 1}}
-	return GetSlidingMoves(state, pos, piece, directions)
-}
-
-// GetQueenMoves returns all possible queen moves
-func GetQueenMoves(state *BoardState, pos Position, piece *Piece) []Position {
-	// TODO: Implement queen move logic
-	directions := [][2]int{
-		{-1, -1}, {-1, 0}, {-1, 1},
-		{0, -1}, {0, 1},
-		{1, -1}, {1, 0}, {1, 1},
-	}
-	return GetSlidingMoves(state, pos, piece, directions)
-}
-
-// GetKingMoves returns all possible king moves (including castling)
-func GetKingMoves(state *BoardState, pos Position, piece *Piece) []Position {
-	// TODO: Implement king move logic
-	var moves []Position
-	offsets := [][2]int{
-		{-1, -1}, {-1, 0}, {-1, 1},
-		{0, -1}, {0, 1},
-		{1, -1}, {1, 0}, {1, 1},
-	}
-
-	for _, offset := range offsets {
-		newPos := Position{Row: pos.Row + offset[0], Col: pos.Col + offset[1]}
-		if newPos.IsValid() {
-			target := state.Board.GetPieceAt(newPos)
-			if target == nil || target.Color != piece.Color {
-				moves = append(moves, newPos)
+	for _, dc := range []int{-1, 1} {
+		to := Position{Row: pos.Row + dir, Col: pos.Col + dc}
+		if !to.IsValid() {
+			continue
+		}
+		if target := state.Board.GetPieceAt(to); target != nil {
+			if target.Color != piece.Color {
+				addPawnMove(to, target, false)
+			}
+			continue
+		}
+		if ep := state.EnPassantTarget; ep != nil && ep.Equals(to) {
+			victim := state.Board.GetPieceAt(Position{Row: pos.Row, Col: to.Col})
+			if victim != nil && victim.Type == Pawn && victim.Color != piece.Color {
+				addPawnMove(to, victim, true)
 			}
 		}
 	}
-
-	// TODO: Add castling logic
-
 	return moves
 }
 
-// GetSlidingMoves returns moves for sliding pieces (bishop, rook, queen)
-func GetSlidingMoves(state *BoardState, pos Position, piece *Piece, directions [][2]int) []Position {
-	// TODO: Implement sliding move logic
-	var moves []Position
+func castlingMoves(state *BoardState, pos Position, king *Piece) []Move {
+	row := homeRow(king.Color)
+	if pos.Row != row || pos.Col != 4 {
+		return nil
+	}
+	opponent := king.Color.Opposite()
+	if IsSquareAttacked(&state.Board, pos, opponent) {
+		return nil
+	}
 
-	for _, dir := range directions {
-		newPos := Position{Row: pos.Row + dir[0], Col: pos.Col + dir[1]}
+	kingside, queenside := state.CastlingRights.WhiteKingside, state.CastlingRights.WhiteQueenside
+	if king.Color == Black {
+		kingside, queenside = state.CastlingRights.BlackKingside, state.CastlingRights.BlackQueenside
+	}
 
-		for newPos.IsValid() {
-			target := state.Board.GetPieceAt(newPos)
+	var moves []Move
+	try := func(allowed bool, rookCol int, empty []int, safe []int, kingTo int) {
+		if !allowed {
+			return
+		}
+		rook := state.Board[row][rookCol]
+		if rook == nil || rook.Type != Rook || rook.Color != king.Color {
+			return
+		}
+		for _, c := range empty {
+			if state.Board[row][c] != nil {
+				return
+			}
+		}
+		for _, c := range safe {
+			if IsSquareAttacked(&state.Board, Position{Row: row, Col: c}, opponent) {
+				return
+			}
+		}
+		moves = append(moves, Move{From: pos, To: Position{Row: row, Col: kingTo}, Piece: king, IsCastling: true})
+	}
+	try(kingside, 7, []int{5, 6}, []int{5, 6}, 6)
+	try(queenside, 0, []int{1, 2, 3}, []int{2, 3}, 2)
+	return moves
+}
 
-			if target == nil {
-				moves = append(moves, Position{Row: newPos.Row, Col: newPos.Col})
+func stepTargets(board *Board, pos Position, color PieceColor, offsets [][2]int) []Position {
+	var targets []Position
+	for _, o := range offsets {
+		to := Position{Row: pos.Row + o[0], Col: pos.Col + o[1]}
+		if !to.IsValid() {
+			continue
+		}
+		if t := board.GetPieceAt(to); t == nil || t.Color != color {
+			targets = append(targets, to)
+		}
+	}
+	return targets
+}
+
+func slideTargets(board *Board, pos Position, color PieceColor, directions [][2]int) []Position {
+	var targets []Position
+	for _, d := range directions {
+		to := Position{Row: pos.Row + d[0], Col: pos.Col + d[1]}
+		for to.IsValid() {
+			t := board.GetPieceAt(to)
+			if t == nil {
+				targets = append(targets, to)
 			} else {
-				if target.Color != piece.Color {
-					moves = append(moves, Position{Row: newPos.Row, Col: newPos.Col})
+				if t.Color != color {
+					targets = append(targets, to)
 				}
 				break
 			}
-
-			newPos = Position{Row: newPos.Row + dir[0], Col: newPos.Col + dir[1]}
+			to = Position{Row: to.Row + d[0], Col: to.Col + d[1]}
 		}
 	}
-
-	return moves
+	return targets
 }
 
-// WouldBeInCheck checks if making a move would leave the king in check
-func WouldBeInCheck(state *BoardState, from Position, to Position) bool {
-	// TODO: Implement check detection after move
-	testBoard := state.Board.Clone()
-	piece := testBoard.GetPieceAt(from)
-
-	if piece == nil {
-		return true
+// IsSquareAttacked reports whether any piece of color `by` attacks pos
+func IsSquareAttacked(board *Board, pos Position, by PieceColor) bool {
+	// Pawns: a pawn of color `by` attacks diagonally forward, so look one row behind.
+	pawnRow := pos.Row - pawnDirection(by)
+	for _, dc := range []int{-1, 1} {
+		p := board.GetPieceAt(Position{Row: pawnRow, Col: pos.Col + dc})
+		if p != nil && p.Color == by && p.Type == Pawn {
+			return true
+		}
 	}
-
-	testBoard.SetPieceAt(to, piece)
-	testBoard.SetPieceAt(from, nil)
-
-	testState := &BoardState{
-		Board:           testBoard,
-		CurrentTurn:     state.CurrentTurn,
-		CastlingRights:  state.CastlingRights,
-		EnPassantTarget: state.EnPassantTarget,
+	for _, o := range knightOffsets {
+		p := board.GetPieceAt(Position{Row: pos.Row + o[0], Col: pos.Col + o[1]})
+		if p != nil && p.Color == by && p.Type == Knight {
+			return true
+		}
 	}
-
-	return IsInCheck(testState, piece.Color)
+	for _, o := range kingOffsets {
+		p := board.GetPieceAt(Position{Row: pos.Row + o[0], Col: pos.Col + o[1]})
+		if p != nil && p.Color == by && p.Type == King {
+			return true
+		}
+	}
+	rayHit := func(dirs [][2]int, a, b PieceType) bool {
+		for _, d := range dirs {
+			sq := Position{Row: pos.Row + d[0], Col: pos.Col + d[1]}
+			for sq.IsValid() {
+				if p := board.GetPieceAt(sq); p != nil {
+					if p.Color == by && (p.Type == a || p.Type == b) {
+						return true
+					}
+					break
+				}
+				sq = Position{Row: sq.Row + d[0], Col: sq.Col + d[1]}
+			}
+		}
+		return false
+	}
+	return rayHit(rookDirections, Rook, Queen) || rayHit(bishopDirections, Bishop, Queen)
 }
 
 // IsInCheck checks if a player is in check
 func IsInCheck(state *BoardState, color PieceColor) bool {
-	// TODO: Implement check detection
 	kingPos := state.Board.FindKingPosition(color)
 	if kingPos == nil {
 		return false
 	}
+	return IsSquareAttacked(&state.Board, *kingPos, color.Opposite())
+}
 
-	opponentColor := color.Opposite()
+// GetLegalMovesFrom returns all legal moves for the side to move from pos
+func GetLegalMovesFrom(state *BoardState, pos Position) []Move {
+	piece := state.Board.GetPieceAt(pos)
+	if piece == nil || piece.Color != state.CurrentTurn {
+		return nil
+	}
+	var legal []Move
+	for _, m := range GeneratePseudoLegalMoves(state, pos) {
+		if !IsInCheck(ApplyMove(state, m), piece.Color) {
+			legal = append(legal, m)
+		}
+	}
+	return legal
+}
 
-	// Check if any opponent piece can attack the king
-	for _, p := range state.Board.GetPiecesByColor(opponentColor) {
-		attackSquares := GetAttackSquares(state, p.Position, p.Piece)
-		for _, sq := range attackSquares {
-			if sq.Row == kingPos.Row && sq.Col == kingPos.Col {
+// GenerateLegalMoves returns every legal move for the side to move
+func GenerateLegalMoves(state *BoardState) []Move {
+	var legal []Move
+	for row := 0; row < 8; row++ {
+		for col := 0; col < 8; col++ {
+			p := state.Board[row][col]
+			if p != nil && p.Color == state.CurrentTurn {
+				legal = append(legal, GetLegalMovesFrom(state, Position{Row: row, Col: col})...)
+			}
+		}
+	}
+	return legal
+}
+
+// HasLegalMove reports whether the side to move has at least one legal move
+func HasLegalMove(state *BoardState) bool {
+	for row := 0; row < 8; row++ {
+		for col := 0; col < 8; col++ {
+			p := state.Board[row][col]
+			if p != nil && p.Color == state.CurrentTurn && len(GetLegalMovesFrom(state, Position{Row: row, Col: col})) > 0 {
 				return true
 			}
 		}
 	}
-
 	return false
 }
 
-// GetAttackSquares returns squares that a piece can attack (ignoring check)
-func GetAttackSquares(state *BoardState, pos Position, piece *Piece) []Position {
-	// TODO: Implement attack square calculation
-	switch piece.Type {
-	case Pawn:
-		// Pawns attack diagonally
-		direction := -1
-		if piece.Color == Black {
-			direction = 1
+// GetValidMoves returns the distinct destination squares for the piece at pos
+func GetValidMoves(state *BoardState, pos Position) []Position {
+	var targets []Position
+	seen := map[Position]bool{}
+	for _, m := range GetLegalMovesFrom(state, pos) {
+		if !seen[m.To] {
+			seen[m.To] = true
+			targets = append(targets, m.To)
 		}
-		var attacks []Position
-		for _, colOffset := range []int{-1, 1} {
-			attackPos := Position{Row: pos.Row + direction, Col: pos.Col + colOffset}
-			if attackPos.IsValid() {
-				attacks = append(attacks, attackPos)
-			}
-		}
-		return attacks
-	case Knight:
-		return GetKnightMoves(state, pos, piece)
-	case Bishop:
-		return GetBishopMoves(state, pos, piece)
-	case Rook:
-		return GetRookMoves(state, pos, piece)
-	case Queen:
-		return GetQueenMoves(state, pos, piece)
-	case King:
-		return GetKingMoves(state, pos, piece)
 	}
-	return nil
+	return targets
 }
 
-// IsValidMove checks if a move is valid
+// FindLegalMove finds the legal move matching from/to. For promotions an empty
+// promotion type defaults to a queen.
+func FindLegalMove(state *BoardState, from, to Position, promotion PieceType) (Move, error) {
+	if promotion == "" {
+		promotion = Queen
+	}
+	for _, m := range GetLegalMovesFrom(state, from) {
+		if !m.To.Equals(to) {
+			continue
+		}
+		if m.IsPromotion && m.PromotedTo != promotion {
+			continue
+		}
+		return m, nil
+	}
+	return Move{}, ErrInvalidMove
+}
+
+// IsValidMove checks if a move is legal
 func IsValidMove(state *BoardState, from Position, to Position) bool {
-	// TODO: Implement move validation
-	validMoves := GetValidMoves(state, from)
-	for _, m := range validMoves {
-		if m.Row == to.Row && m.Col == to.Col {
-			return true
-		}
-	}
-	return false
+	_, err := FindLegalMove(state, from, to, "")
+	return err == nil
 }
 
-// MakeMove executes a move and returns the new board state
-func MakeMove(state *BoardState, from Position, to Position) *BoardState {
-	// TODO: Implement move execution
-	piece := state.Board.GetPieceAt(from)
+// ApplyMove executes a (pseudo-legal) move and returns the resulting state.
+// The input state is not modified.
+func ApplyMove(state *BoardState, m Move) *BoardState {
+	board := state.Board.Clone()
+	piece := board.GetPieceAt(m.From)
 	if piece == nil {
 		return state
 	}
 
-	newBoard := state.Board.Clone()
-	movedPiece := &Piece{
-		Type:     piece.Type,
-		Color:    piece.Color,
-		HasMoved: true,
+	moved := &Piece{Type: piece.Type, Color: piece.Color, HasMoved: true}
+	if m.IsPromotion {
+		promo := m.PromotedTo
+		if !IsValidPromotion(promo) {
+			promo = Queen
+		}
+		moved.Type = promo
 	}
-	newBoard.SetPieceAt(to, movedPiece)
-	newBoard.SetPieceAt(from, nil)
+	board.SetPieceAt(m.From, nil)
+	board.SetPieceAt(m.To, moved)
 
-	// Determine en passant target
+	if m.IsEnPassant {
+		board.SetPieceAt(Position{Row: m.From.Row, Col: m.To.Col}, nil)
+	}
+	if m.IsCastling {
+		row := m.From.Row
+		rookFrom, rookTo := 7, 5
+		if m.To.Col == 2 {
+			rookFrom, rookTo = 0, 3
+		}
+		if rook := board[row][rookFrom]; rook != nil {
+			board[row][rookTo] = &Piece{Type: Rook, Color: rook.Color, HasMoved: true}
+			board[row][rookFrom] = nil
+		}
+	}
+
+	rights := state.CastlingRights
+	if piece.Type == King {
+		if piece.Color == White {
+			rights.WhiteKingside, rights.WhiteQueenside = false, false
+		} else {
+			rights.BlackKingside, rights.BlackQueenside = false, false
+		}
+	}
+	for _, sq := range []Position{m.From, m.To} {
+		switch {
+		case sq.Row == 7 && sq.Col == 7:
+			rights.WhiteKingside = false
+		case sq.Row == 7 && sq.Col == 0:
+			rights.WhiteQueenside = false
+		case sq.Row == 0 && sq.Col == 7:
+			rights.BlackKingside = false
+		case sq.Row == 0 && sq.Col == 0:
+			rights.BlackQueenside = false
+		}
+	}
+
 	var enPassant *Position
-	if piece.Type == Pawn && abs(from.Row-to.Row) == 2 {
-		enPassant = &Position{Row: (from.Row + to.Row) / 2, Col: from.Col}
+	if piece.Type == Pawn && abs(m.From.Row-m.To.Row) == 2 {
+		enPassant = &Position{Row: (m.From.Row + m.To.Row) / 2, Col: m.From.Col}
 	}
 
-	newTurn := state.CurrentTurn.Opposite()
-	newFullMove := state.FullMoveNumber
+	halfMove := state.HalfMoveClock + 1
+	if piece.Type == Pawn || m.Captured != nil || state.Board.GetPieceAt(m.To) != nil {
+		halfMove = 0
+	}
+	fullMove := state.FullMoveNumber
 	if state.CurrentTurn == Black {
-		newFullMove++
+		fullMove++
 	}
 
 	return &BoardState{
-		Board:           newBoard,
-		CurrentTurn:     newTurn,
-		CastlingRights:  state.CastlingRights, // TODO: Update castling rights
+		Board:           board,
+		CurrentTurn:     state.CurrentTurn.Opposite(),
+		CastlingRights:  rights,
 		EnPassantTarget: enPassant,
-		HalfMoveClock:   state.HalfMoveClock + 1,
-		FullMoveNumber:  newFullMove,
+		HalfMoveClock:   halfMove,
+		FullMoveNumber:  fullMove,
 	}
 }
 
-// Helper function for absolute value
+// MakeMove executes a legal move (auto-promoting to a queen) and returns the new state.
+// If the move is illegal the original state is returned.
+func MakeMove(state *BoardState, from Position, to Position) *BoardState {
+	m, err := FindLegalMove(state, from, to, "")
+	if err != nil {
+		return state
+	}
+	return ApplyMove(state, m)
+}
+
 func abs(x int) int {
 	if x < 0 {
 		return -x
 	}
 	return x
-}
-
-// GameStatus represents the current game status
-type GameStatus string
-
-const (
-	Active    GameStatus = "active"
-	Check     GameStatus = "check"
-	Checkmate GameStatus = "checkmate"
-	Stalemate GameStatus = "stalemate"
-	Draw      GameStatus = "draw"
-)
-
-// GetGameStatus determines the current game status
-func GetGameStatus(state *BoardState) GameStatus {
-	// TODO: Implement game status detection
-	currentInCheck := IsInCheck(state, state.CurrentTurn)
-
-	// Check if current player has any valid moves
-	hasValidMoves := false
-	for _, p := range state.Board.GetPiecesByColor(state.CurrentTurn) {
-		if len(GetValidMoves(state, p.Position)) > 0 {
-			hasValidMoves = true
-			break
-		}
-	}
-
-	if !hasValidMoves {
-		if currentInCheck {
-			return Checkmate
-		}
-		return Stalemate
-	}
-
-	if currentInCheck {
-		return Check
-	}
-	return Active
 }
