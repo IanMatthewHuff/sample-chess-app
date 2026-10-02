@@ -29,28 +29,56 @@ header h1 {
     color: #f0d9b5;
 }
 
+h2 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #9aa5c4;
+    margin: 18px 0 8px;
+}
+
+.hidden {
+    display: none !important;
+}
+
+#error-banner {
+    max-width: 800px;
+    margin: 0 auto 16px;
+    padding: 10px 14px;
+    background: #5c1a2a;
+    border: 1px solid #e94560;
+    border-radius: 6px;
+}
+
 #game-container {
     display: flex;
-    gap: 20px;
+    gap: 24px;
     justify-content: center;
     align-items: flex-start;
+    flex-wrap: wrap;
 }
 
 #board {
     display: grid;
-    grid-template-columns: repeat(8, 60px);
-    grid-template-rows: repeat(8, 60px);
+    grid-template-columns: repeat(8, 64px);
+    grid-template-rows: repeat(8, 64px);
     border: 3px solid #b58863;
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
 }
 
+#board.locked .square {
+    cursor: default;
+}
+
 .square {
-    width: 60px;
-    height: 60px;
+    position: relative;
+    width: 64px;
+    height: 64px;
     display: flex;
     justify-content: center;
     align-items: center;
-    font-size: 40px;
+    font-size: 46px;
+    line-height: 1;
     cursor: pointer;
     user-select: none;
 }
@@ -63,72 +91,183 @@ header h1 {
     background-color: #b58863;
 }
 
+.square.last-move.light {
+    background-color: #f6eb72;
+}
+
+.square.last-move.dark {
+    background-color: #dcc34b;
+}
+
 .square.selected {
     background-color: #7fc97f !important;
 }
 
-.square.valid-move {
+.square.in-check {
+    background: radial-gradient(circle, #ff3b3b 0%, #e02020 45%, transparent 80%), #b58863;
+}
+
+.piece {
     position: relative;
+    z-index: 1;
+    color: #111;
+}
+
+.piece-white {
+    color: #fff;
+    text-shadow: 0 0 2px #000, 0 0 1px #000, 0 1px 2px #000;
 }
 
 .square.valid-move::after {
     content: '';
     position: absolute;
-    width: 20px;
-    height: 20px;
-    background-color: rgba(0, 128, 0, 0.5);
+    width: 22px;
+    height: 22px;
+    background-color: rgba(20, 85, 30, 0.5);
     border-radius: 50%;
 }
 
 .square.capture-move::after {
-    width: 100%;
-    height: 100%;
-    background-color: rgba(255, 0, 0, 0.3);
-    border-radius: 0;
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 5px solid rgba(20, 85, 30, 0.6);
+    border-radius: 50%;
+}
+
+.coord {
+    position: absolute;
+    font-size: 11px;
+    font-weight: 600;
+    opacity: 0.75;
+    color: #333;
+    z-index: 2;
+}
+
+.coord.rank {
+    top: 2px;
+    left: 3px;
+}
+
+.coord.file {
+    bottom: 1px;
+    right: 3px;
 }
 
 #game-info {
     background-color: #16213e;
     padding: 20px;
     border-radius: 8px;
-    min-width: 200px;
+    width: 280px;
 }
 
 #turn-indicator {
     font-size: 1.2rem;
     font-weight: bold;
-    margin-bottom: 10px;
     padding: 10px;
     background-color: #0f3460;
     border-radius: 4px;
     text-align: center;
 }
 
+#turn-indicator.thinking {
+    animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    50% { opacity: 0.55; }
+}
+
 #game-status {
     margin-top: 10px;
     font-size: 1.1rem;
     color: #e94560;
+    min-height: 1.4em;
+    text-align: center;
+}
+
+#game-status.game-over {
+    font-weight: bold;
+    color: #ffd166;
+}
+
+#game-meta {
+    font-size: 0.85rem;
+    color: #9aa5c4;
+    text-align: center;
 }
 
 #captured-pieces {
-    margin-top: 20px;
+    margin-top: 14px;
 }
 
-#captured-white, #captured-black {
-    min-height: 30px;
-    margin: 5px 0;
+.captured-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 6px;
+    font-size: 1.4rem;
+}
+
+/* Light-square tray so captured pieces read exactly as they do on the board. */
+#captured-white,
+#captured-black {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    min-height: 36px;
+    padding: 0 8px;
+    background-color: #f0d9b5;
+    border-radius: 6px;
+    line-height: 1.3;
+}
+
+#captured-white.empty,
+#captured-black.empty {
+    background-color: rgba(240, 217, 181, 0.08);
+}
+
+.captured-row .label {
+    font-size: 0.8rem;
+    color: #9aa5c4;
+    width: 72px;
+    flex-shrink: 0;
+    line-height: 36px;
+}
+
+#move-history {
+    padding: 10px;
+    background-color: #0f1a33;
+    border-radius: 6px;
+    height: 160px;
+    overflow-y: auto;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.9rem;
+    color: #9aa5c4;
+}
+
+#move-history ol {
+    padding-left: 32px;
+    color: #9aa5c4;
+}
+
+#move-history li .san {
+    display: inline-block;
+    width: 70px;
+    color: #eee;
 }
 
 #controls {
-    display: flex;
-    justify-content: center;
-    gap: 10px;
-    margin-top: 20px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin-top: 14px;
 }
 
-#controls button {
-    padding: 10px 20px;
-    font-size: 1rem;
+button {
+    padding: 8px 10px;
+    font-size: 0.95rem;
     background-color: #0f3460;
     color: #eee;
     border: none;
@@ -137,23 +276,80 @@ header h1 {
     transition: background-color 0.2s;
 }
 
-#controls button:hover {
+button:hover:not(:disabled) {
     background-color: #e94560;
 }
 
-#move-history {
-    margin-top: 20px;
-    padding: 15px;
-    background-color: #16213e;
+button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+#new-game-form label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    font-size: 0.9rem;
+}
+
+#new-game-form select {
+    width: 140px;
+    padding: 4px;
+    background: #0f1a33;
+    color: #eee;
+    border: 1px solid #2c3e6b;
+    border-radius: 4px;
+}
+
+#new-game {
+    width: 100%;
+    margin-top: 4px;
+    background-color: #e94560;
+}
+
+#new-game:hover:not(:disabled) {
+    background-color: #ff5d78;
+}
+
+#promotion-dialog {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+}
+
+#promotion-dialog .dialog-body {
+    background: #16213e;
+    padding: 20px;
     border-radius: 8px;
-    max-height: 200px;
-    overflow-y: auto;
+    text-align: center;
 }
 
-.piece {
-    cursor: grab;
+#promotion-dialog .choices {
+    display: flex;
+    gap: 8px;
+    margin: 12px 0;
 }
 
-.piece:active {
-    cursor: grabbing;
+#promotion-dialog .choices button {
+    width: 68px;
+    height: 68px;
+    font-size: 48px;
+    line-height: 1;
+    background: #f0d9b5;
+    color: #111;
+}
+
+#promotion-dialog .choices button:hover {
+    background: #7fc97f;
+}
+
+button.link {
+    background: none;
+    color: #9aa5c4;
+    text-decoration: underline;
 }

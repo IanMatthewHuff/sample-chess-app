@@ -13,12 +13,12 @@ type CastlingRights struct {
 
 // BoardState represents the complete state of a chess game
 type BoardState struct {
-	Board           Board           `json:"board"`
-	CurrentTurn     PieceColor      `json:"currentTurn"`
-	CastlingRights  CastlingRights  `json:"castlingRights"`
-	EnPassantTarget *Position       `json:"enPassantTarget"`
-	HalfMoveClock   int             `json:"halfMoveClock"`
-	FullMoveNumber  int             `json:"fullMoveNumber"`
+	Board           Board          `json:"board"`
+	CurrentTurn     PieceColor     `json:"currentTurn"`
+	CastlingRights  CastlingRights `json:"castlingRights"`
+	EnPassantTarget *Position      `json:"enPassantTarget"`
+	HalfMoveClock   int            `json:"halfMoveClock"`
+	FullMoveNumber  int            `json:"fullMoveNumber"`
 }
 
 // NewCastlingRights creates default castling rights
@@ -83,22 +83,10 @@ func (b *Board) SetPieceAt(pos Position, piece *Piece) {
 	}
 }
 
-// Clone creates a deep copy of the board
+// Clone creates a copy of the board. Pieces are treated as immutable values
+// (moves always allocate a new Piece), so sharing piece pointers is safe.
 func (b *Board) Clone() Board {
-	// TODO: Implement board cloning
-	var newBoard Board
-	for row := 0; row < 8; row++ {
-		for col := 0; col < 8; col++ {
-			if b[row][col] != nil {
-				newBoard[row][col] = &Piece{
-					Type:     b[row][col].Type,
-					Color:    b[row][col].Color,
-					HasMoved: b[row][col].HasMoved,
-				}
-			}
-		}
-	}
-	return newBoard
+	return *b
 }
 
 // FindKingPosition finds the king's position for a given color

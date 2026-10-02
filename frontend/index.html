@@ -11,32 +11,76 @@
         <header>
             <h1>Chess</h1>
         </header>
-        
+
+        <div id="error-banner" class="hidden" role="alert"></div>
+
         <main>
             <div id="game-container">
-                <div id="board"></div>
-                
+                <div id="board" aria-label="Chess board"></div>
+
                 <aside id="game-info">
-                    <div id="turn-indicator">White to move</div>
-                    <div id="game-status"></div>
+                    <div id="turn-indicator">Connecting…</div>
+                    <div id="game-status" aria-live="polite"></div>
+                    <div id="game-meta"></div>
+
                     <div id="captured-pieces">
-                        <div id="captured-white"></div>
-                        <div id="captured-black"></div>
+                        <div class="captured-row"><span class="label">White took</span><span id="captured-white"></span></div>
+                        <div class="captured-row"><span class="label">Black took</span><span id="captured-black"></span></div>
                     </div>
+
+                    <h2>Moves</h2>
+                    <div id="move-history"></div>
+
+                    <div id="controls">
+                        <button id="undo">Undo</button>
+                        <button id="redo">Redo</button>
+                        <button id="flip-board">Flip</button>
+                        <button id="resign">Resign</button>
+                    </div>
+
+                    <form id="new-game-form" onsubmit="return false">
+                        <h2>New game</h2>
+                        <label>Mode
+                            <select id="opt-mode">
+                                <option value="ai" selected>vs AI</option>
+                                <option value="local">Two players</option>
+                            </select>
+                        </label>
+                        <div id="ai-options">
+                            <label>Play as
+                                <select id="opt-color">
+                                    <option value="white" selected>White</option>
+                                    <option value="black">Black</option>
+                                </select>
+                            </label>
+                            <label>Difficulty
+                                <select id="opt-difficulty">
+                                    <option value="easy">Easy</option>
+                                    <option value="medium" selected>Medium</option>
+                                    <option value="hard">Hard</option>
+                                </select>
+                            </label>
+                        </div>
+                        <button id="new-game" type="button">Start new game</button>
+                    </form>
                 </aside>
             </div>
-            
-            <div id="controls">
-                <button id="new-game">New Game</button>
-                <button id="undo">Undo</button>
-                <button id="redo">Redo</button>
-                <button id="flip-board">Flip Board</button>
-            </div>
-            
-            <div id="move-history"></div>
         </main>
+
+        <div id="promotion-dialog" class="hidden" role="dialog" aria-label="Choose promotion piece">
+            <div class="dialog-body">
+                <p>Promote to:</p>
+                <div class="choices">
+                    <button data-piece="queen" title="Queen"></button>
+                    <button data-piece="rook" title="Rook"></button>
+                    <button data-piece="bishop" title="Bishop"></button>
+                    <button data-piece="knight" title="Knight"></button>
+                </div>
+                <button id="promotion-cancel" class="link">Cancel</button>
+            </div>
+        </div>
     </div>
-    
+
     <script type="module" src="./src/index.ts"></script>
 </body>
 </html>
