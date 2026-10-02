@@ -1,0 +1,159 @@
+/* Chess App Styles */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: #1a1a2e;
+    color: #eee;
+    min-height: 100vh;
+}
+
+#app {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+header {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+header h1 {
+    font-size: 2.5rem;
+    color: #f0d9b5;
+}
+
+#game-container {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    align-items: flex-start;
+}
+
+#board {
+    display: grid;
+    grid-template-columns: repeat(8, 60px);
+    grid-template-rows: repeat(8, 60px);
+    border: 3px solid #b58863;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+}
+
+.square {
+    width: 60px;
+    height: 60px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 40px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.square.light {
+    background-color: #f0d9b5;
+}
+
+.square.dark {
+    background-color: #b58863;
+}
+
+.square.selected {
+    background-color: #7fc97f !important;
+}
+
+.square.valid-move {
+    position: relative;
+}
+
+.square.valid-move::after {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    background-color: rgba(0, 128, 0, 0.5);
+    border-radius: 50%;
+}
+
+.square.capture-move::after {
+    width: 100%;
+    height: 100%;
+    background-color: rgba(255, 0, 0, 0.3);
+    border-radius: 0;
+}
+
+#game-info {
+    background-color: #16213e;
+    padding: 20px;
+    border-radius: 8px;
+    min-width: 200px;
+}
+
+#turn-indicator {
+    font-size: 1.2rem;
+    font-weight: bold;
+    margin-bottom: 10px;
+    padding: 10px;
+    background-color: #0f3460;
+    border-radius: 4px;
+    text-align: center;
+}
+
+#game-status {
+    margin-top: 10px;
+    font-size: 1.1rem;
+    color: #e94560;
+}
+
+#captured-pieces {
+    margin-top: 20px;
+}
+
+#captured-white, #captured-black {
+    min-height: 30px;
+    margin: 5px 0;
+}
+
+#controls {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+#controls button {
+    padding: 10px 20px;
+    font-size: 1rem;
+    background-color: #0f3460;
+    color: #eee;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+#controls button:hover {
+    background-color: #e94560;
+}
+
+#move-history {
+    margin-top: 20px;
+    padding: 15px;
+    background-color: #16213e;
+    border-radius: 8px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.piece {
+    cursor: grab;
+}
+
+.piece:active {
+    cursor: grabbing;
+}

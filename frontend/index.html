@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess App</title>
+    <link rel="stylesheet" href="./src/styles.css">
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>Chess</h1>
+        </header>
+        
+        <main>
+            <div id="game-container">
+                <div id="board"></div>
+                
+                <aside id="game-info">
+                    <div id="turn-indicator">White to move</div>
+                    <div id="game-status"></div>
+                    <div id="captured-pieces">
+                        <div id="captured-white"></div>
+                        <div id="captured-black"></div>
+                    </div>
+                </aside>
+            </div>
+            
+            <div id="controls">
+                <button id="new-game">New Game</button>
+                <button id="undo">Undo</button>
+                <button id="redo">Redo</button>
+                <button id="flip-board">Flip Board</button>
+            </div>
+            
+            <div id="move-history"></div>
+        </main>
+    </div>
+    
+    <script type="module" src="./src/index.ts"></script>
+</body>
+</html>
